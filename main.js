@@ -12,14 +12,14 @@ function renderMap() {
         value: (taskData[city]?.status === '已完成') ? 2 : 1
     }));
     chart.setOption({
-        title: { text: '中国城市任务可视化地图', left: 'center' },
+        title: { text: '小吉&小尹的地图计划', left: 'center' },
         tooltip: {
             trigger: 'item',
             formatter: function (params) {
                 const d = taskData[params.name];
                 if (!d) return params.name + '<br/>暂无任务';
                 return params.name + '<br/>'
-                    + '任务：' + (d.text || '') + '<br/>'
+                    + '任务：亲亲+抱抱～' + (d.text || '') + '<br/>'
                     + '状态：' + (d.status || '') + '<br/>'
                     + (d.date ? '完成时间：' + d.date : '');
             }
@@ -56,7 +56,7 @@ function saveTask() {
     const text = document.getElementById('newTaskInput').value.trim();
     const status = document.getElementById('statusInput').value;
     const date = document.getElementById('dateInput').value;
-    if (!text) return alert('请输入任务内容！');
+    if (!text) return alert('请输入任务内容，如亲亲抱抱炒饭～');
     taskData[currentCity] = { text, status, date };
     localStorage.setItem('chinaTasks', JSON.stringify(taskData));
     closeTaskInput();
