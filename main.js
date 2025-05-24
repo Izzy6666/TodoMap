@@ -1,25 +1,44 @@
-// Daddy专属中国地图任务可视化 - 纯本地&纯前端
-// 需要 echarts.min.js + china.js (var chinaJson=...)
+// LeanCloud云端同步任务地图专属逻辑
+const APP_ID = 'Tcyd6Q4OHvWx8ojkoovSIiO5-gzGzoHsz';
+const APP_KEY = 'li9JXYeqUit4BNAUskWlRasW';
+AV.init({ appId: APP_ID, appKey: APP_KEY, serverURL: "https://Tcyd6Q4O.api.lncldglobal.com" });
+
 let chart = echarts.init(document.getElementById('main'));
 echarts.registerMap('china', chinaJson);
 
-let taskData = JSON.parse(localStorage.getItem('chinaTasks') || '{}');
+let taskData = {}; // { city: {text, status, date, objectId} }
 let currentCity = '';
 
+async function loadTasks() {
+    const query = new AV.Query('CityTask');
+    query.limit(1000);
+    const results = await query.find();
+    taskData = {};
+    results.forEach(obj => {
+        const city = obj.get('city');
+        taskData[city] = {
+            text: obj.get('text') || '',
+            status: obj.get('status') || '未完成',
+            date: obj.get('date') || '',
+            objectId: obj.id
+        };
+    });
+    renderMap();
+}
 function renderMap() {
     const data = Object.keys(taskData).map(city => ({
         name: city,
         value: (taskData[city]?.status === '已完成') ? 2 : 1
     }));
     chart.setOption({
-        title: { text: '小吉&小尹的地图计划', left: 'center' },
+        title: { text: '小吉&小尹地图计划', left: 'center' },
         tooltip: {
             trigger: 'item',
             formatter: function (params) {
                 const d = taskData[params.name];
                 if (!d) return params.name + '<br/>暂无任务';
                 return params.name + '<br/>'
-                    + '任务：亲亲+抱抱～' + (d.text || '') + '<br/>'
+                    + '任务：' + (d.text || '') + '<br/>'
                     + '状态：' + (d.status || '') + '<br/>'
                     + (d.date ? '完成时间：' + d.date : '');
             }
@@ -52,15 +71,28 @@ function showTaskInput(city) {
     renderTaskList(city);
     document.getElementById('taskBox').style.display = 'block';
 }
-function saveTask() {
+async function saveTask() {
     const text = document.getElementById('newTaskInput').value.trim();
     const status = document.getElementById('statusInput').value;
     const date = document.getElementById('dateInput').value;
-    if (!text) return alert('请输入任务内容，如亲亲抱抱炒饭～');
-    taskData[currentCity] = { text, status, date };
-    localStorage.setItem('chinaTasks', JSON.stringify(taskData));
+    if (!text) return alert('输入内容，如亲亲做饭饭');
+    let d = taskData[currentCity];
+    let obj;
+    if (d && d.objectId) {
+        obj = AV.Object.createWithoutData('CityTask', d.objectId);
+        obj.set('text', text);
+        obj.set('status', status);
+        obj.set('date', date);
+    } else {
+        obj = new AV.Object('CityTask');
+        obj.set('city', currentCity);
+        obj.set('text', text);
+        obj.set('status', status);
+        obj.set('date', date);
+    }
+    await obj.save();
+    await loadTasks();
     closeTaskInput();
-    renderMap();
 }
 function closeTaskInput() {
     document.getElementById('taskBox').style.display = 'none';
@@ -75,19 +107,27 @@ function renderTaskList(city) {
         ul.appendChild(li);
     }
 }
-function delTask(city) {
-    delete taskData[city];
-    localStorage.setItem('chinaTasks', JSON.stringify(taskData));
-    renderTaskList(city);
-    renderMap();
+async function delTask(city) {
+    const d = taskData[city];
+    if (d && d.objectId) {
+        const obj = AV.Object.createWithoutData('CityTask', d.objectId);
+        await obj.destroy();
+    }
+    await loadTasks();
+    closeTaskInput();
 }
 function exportTasks() {
-    const blob = new Blob([JSON.stringify(taskData, null, 2)], {type:'application/json'});
+    const out = {};
+    Object.keys(taskData).forEach(city => {
+        out[city] = { ...taskData[city] };
+        delete out[city].objectId;
+    });
+    const blob = new Blob([JSON.stringify(out, null, 2)], {type:'application/json'});
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = 'china_tasks.json';
     a.click();
 }
 window.onload = function() {
-    renderMap();
+    loadTasks();
 };
