@@ -87,6 +87,31 @@ function exportTasks() {
     a.download = 'china_tasks.json';
     a.click();
 }
+
 window.onload = function() {
     renderMap();
 };
+function importTasks() {
+    document.getElementById('importFile').click();
+}
+document.getElementById('importFile').addEventListener('change', function(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(evt) {
+        try {
+            const data = JSON.parse(evt.target.result);
+            if (typeof data === "object") {
+                taskData = data;
+                localStorage.setItem('chinaTasks', JSON.stringify(taskData));
+                renderMap();
+                alert('任务导入成功！');
+            } else {
+                alert('文件格式错误！');
+            }
+        } catch (err) {
+            alert('导入失败：' + err.message);
+        }
+    };
+    reader.readAsText(file, 'utf-8');
+});
