@@ -88,9 +88,6 @@ function exportTasks() {
     a.click();
 }
 
-window.onload = function() {
-    renderMap();
-};
 function importTasks() {
     document.getElementById('importFile').click();
 }
@@ -115,3 +112,6 @@ document.getElementById('importFile').addEventListener('change', function(e) {
     };
     reader.readAsText(file, 'utf-8');
 });
+window.onload = function() {
+    renderMap();
+};
