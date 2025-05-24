@@ -1,159 +1,47 @@
 <!DOCTYPE html>
 <html lang="zh">
 <head>
-    <meta charset="utf-8">
-    <title>中国城市云同步To-Do地图</title>
-    <script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
-    <script src="https://unpkg.com/echarts@5/dist/geo/china.js"></script>
-    <script src="https://unpkg.com/@supabase/supabase-js"></script>
+    <meta charset="UTF-8">
+    <title>中国地图任务可视化</title>
     <style>
-        body { margin:0; font-family:sans-serif; background:#f5f5f5; }
-        #main { width:100vw; height:90vh; }
-        #taskInputBox {
+        body { margin:0; background:#f5f5f5; font-family:sans-serif;}
+        #main { width: 100vw; height: 92vh; }
+        #taskBox {
             position: fixed; top: 15vh; left: 50vw; transform:translate(-50%,0);
-            min-width: 300px; background: #fff; border-radius: 16px; box-shadow: 0 2px 12px #0001;
-            border: 1px solid #eee; padding: 24px 20px 16px 20px; display: none; z-index: 9999;
+            background: #fff; border-radius: 16px; box-shadow: 0 2px 12px #0001;
+            border: 1px solid #eee; padding: 20px 28px 12px 28px; min-width: 300px; z-index: 9999;
+            display:none;
         }
-        #taskInputBox h3 { margin:0 0 12px 0; }
-        #taskInputBox ul { padding:0; margin:0 0 10px 0; list-style: none; }
-        #taskInputBox li { margin-bottom: 6px; }
-        .del-btn { color:#d33; font-size: 12px; margin-left: 8px; cursor:pointer;}
+        #taskBox input, #taskBox textarea { width:92%; margin:6px 0; font-size:16px; }
+        #taskBox label { display:block; margin-top:6px;}
+        #taskList {padding:0; margin:0 0 10px 0;}
+        #taskList li { margin-bottom: 7px; list-style:none;}
+        .del-btn { color:#d33; font-size: 13px; margin-left: 8px; cursor:pointer;}
         .finished-time { color:#888; font-size:12px; margin-left:16px; }
+        #exportBtn {position: fixed; top: 6px; right: 16px; z-index:888; background: #34495e; color:#fff; border-radius:10px; border:none; padding:7px 15px; font-size:15px;}
     </style>
 </head>
 <body>
-<div id="main"></div>
-<div id="taskInputBox">
-    <h3 id="cityTitle">添加任务</h3>
-    <input type="text" id="newTaskInput" placeholder="输入任务内容" style="width:80%">
-    <button onclick="addTask()">添加</button>
-    <ul id="taskList"></ul>
-    <button onclick="closeTaskInput()">关闭</button>
-</div>
-<script>
-const supabaseUrl = 'https://cgfpnxqlyhlvycdnalcc.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNnZnBueHFseWhsdnljZG5hbGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgwOTI3NDcsImV4cCI6MjA2MzY2ODc0N30.zMfvbpUDPTFgXSeHrW8CoymCKwUdbRLUl8T8pU8jeEs';
-const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
-
-let currentCity = null;
-let allTasks = {};
-
-async function fetchAllTasks() {
-    let { data } = await supabase.from('tasks').select('*');
-    allTasks = {};
-    if (data) {
-        data.forEach(task => {
-            if (!allTasks[task.city]) allTasks[task.city] = [];
-            allTasks[task.city].push(task);
-        });
-    }
-}
-async function fetchCityTasks(city) {
-    let { data } = await supabase.from('tasks').select('*').eq('city', city).order('id');
-    return data || [];
-}
-async function addTask() {
-    const content = document.getElementById('newTaskInput').value.trim();
-    if (!content || !currentCity) return;
-    await supabase.from('tasks').insert([
-        { city: currentCity, content, done: false }
-    ]);
-    document.getElementById('newTaskInput').value = '';
-    await refreshCityTasks(currentCity);
-    await fetchAllTasks();
-    renderMap();
-}
-async function toggleTask(id, done, city) {
-    let fields = { done };
-    if (done) fields.finished_at = new Date().toISOString();
-    else fields.finished_at = null;
-    await supabase.from('tasks').update(fields).eq('id', id);
-    await refreshCityTasks(city);
-    await fetchAllTasks();
-    renderMap();
-}
-async function delTask(id, city) {
-    await supabase.from('tasks').delete().eq('id', id);
-    await refreshCityTasks(city);
-    await fetchAllTasks();
-    renderMap();
-}
-async function refreshCityTasks(city) {
-    let tasks = await fetchCityTasks(city);
-    renderTaskList(tasks);
-}
-function closeTaskInput() {
-    document.getElementById('taskInputBox').style.display = 'none';
-}
-function showTaskInput(city) {
-    currentCity = city;
-    document.getElementById('cityTitle').textContent = `添加任务：${city}`;
-    document.getElementById('taskInputBox').style.display = 'block';
-    refreshCityTasks(city);
-}
-function renderTaskList(tasks) {
-    const ul = document.getElementById('taskList');
-    ul.innerHTML = '';
-    if (!tasks || !tasks.length) {
-        ul.innerHTML = '<li style="color:#999;">暂无任务</li>';
-        return;
-    }
-    tasks.forEach(t => {
-        let li = document.createElement('li');
-        li.innerHTML = `
-            <input type="checkbox" ${t.done ? 'checked' : ''} onclick="toggleTask(${t.id},${!t.done},'${t.city}')">
-            <span style="${t.done?'text-decoration:line-through;color:#bbb;':''}">${t.content}</span>
-            ${t.finished_at ? `<span class="finished-time">完成：${formatTime(t.finished_at)}</span>` : ''}
-            <span class="del-btn" onclick="delTask(${t.id},'${t.city}')">删除</span>
-        `;
-        ul.appendChild(li);
-    });
-}
-function formatTime(str) {
-    if (!str) return '';
-    const d = new Date(str);
-    return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0')
-        +' '+d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
-}
-let myChart = echarts.init(document.getElementById('main'));
-async function renderMap() {
-    let data = [];
-    for (const city in allTasks) {
-        const total = allTasks[city].length;
-        const done = allTasks[city].filter(t => t.done).length;
-        data.push({ name: city, value: done+'/'+total });
-    }
-    myChart.setOption({
-        title: { text: '中国城市To-Do同步地图（免登录版）', left: 'center' },
-        tooltip: {
-            trigger: 'item',
-            formatter: function (params) {
-                const city = params.name;
-                const tasks = allTasks[city] || [];
-                if (!tasks.length) return `${city}<br/>暂无任务`;
-                return `${city}<br/>`
-                    + tasks.map(t => (t.done?'✅ ':'☐ ')
-                    + t.content
-                    + (t.finished_at ? `<br/>&nbsp;&nbsp;<span style='color:#888'>完成: ${formatTime(t.finished_at)}</span>` : '')
-                    ).join('<br/>');
-            }
-        },
-        series: [{
-            type: 'map',
-            map: 'china',
-            roam: true,
-            emphasis: { label: { show: true } },
-            data: data
-        }]
-    });
-}
-myChart.on('click', function(params){
-    showTaskInput(params.name);
-});
-window.onload = async function() {
-    await fetchAllTasks();
-    renderMap();
-};
-</script>
+    <button id="exportBtn" onclick="exportTasks()">导出任务JSON</button>
+    <div id="main"></div>
+    <div id="taskBox">
+        <h3 id="cityTitle"></h3>
+        <label>任务内容：</label>
+        <input type="text" id="newTaskInput" placeholder="请输入任务">
+        <label>状态：</label>
+        <select id="statusInput">
+            <option value="未完成">未完成</option>
+            <option value="已完成">已完成</option>
+        </select>
+        <label>完成时间：</label>
+        <input type="date" id="dateInput">
+        <button onclick="saveTask()">保存</button>
+        <button onclick="closeTaskInput()">关闭</button>
+        <hr>
+        <ul id="taskList"></ul>
+    </div>
+    <script src="echarts.min.js"></script>
+    <script src="china.js"></script>
+    <script src="main.js"></script>
 </body>
 </html>
