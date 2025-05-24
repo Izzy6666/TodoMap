@@ -2,7 +2,7 @@
 <html lang="zh">
 <head>
     <meta charset="utf-8">
-    <title>小吉&小尹To-Do地图</title>
+    <title>中国城市云同步To-Do地图</title>
     <script src="https://unpkg.com/echarts@5/dist/echarts.min.js"></script>
     <script src="https://unpkg.com/echarts@5/dist/geo/china.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js"></script>
@@ -36,7 +36,7 @@ const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZS
 const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
 
 let currentCity = null;
-let allTasks = {}; // { city: [ {id, content, done, finished_at, created_at} ] }
+let allTasks = {};
 
 async function fetchAllTasks() {
     let { data } = await supabase.from('tasks').select('*');
