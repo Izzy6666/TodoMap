@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <title>中国城市云同步To-Do地图</title>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
+    <style>
+        body { margin:0; font-family:sans-serif; background:#f5f5f5; }
+        #main { width:100vw; height:90vh; }
+        #taskInputBox {
+            position: fixed; top: 15vh; left: 50vw; transform:translate(-50%,0);
+            min-width: 300px; background: #fff; border-radius: 16px; box-shadow: 0 2px 12px #0001;
+            border: 1px solid #eee; padding: 24px 20px 16px 20px; display: none; z-index: 9999;
+        }
+        #taskInputBox h3 { margin:0 0 12px 0; }
+        #taskInputBox ul { padding:0; margin:0 0 10px 0; list-style: none; }
+        #taskInputBox li { margin-bottom: 6px; }
+        #loginBox {
+            position: fixed; top: 10vh; left: 50vw; transform:translate(-50%,0);
+            min-width: 280px; background: #fff; border-radius: 16px; box-shadow: 0 2px 12px #0001;
+            border: 1px solid #eee; padding: 24px 20px 16px 20px; z-index: 10001; display:none;
+        }
+        #overlay {
+            position:fixed; left:0; top:0; width:100vw; height:100vh;
+            background:rgba(0,0,0,0.13); z-index:8888; display:none;
+        }
+        .logout { float:right; font-size:13px; cursor:pointer; color:#0366d6;}
+        .user-info { float:right; font-size:13px; color:#888; }
+        .del-btn { color:#d33; font-size: 12px; margin-left: 8px; cursor:pointer;}
+        .finished-time { color:#888; font-size:12px; margin-left:16px; }
+    </style>
+</head>
+<body>
+<div id="overlay"></div>
+<div id="main"></div>
+<div id="loginBox">
+    <h3>登录 / 注册</h3>
+    <input id="loginEmail" placeholder="请输入邮箱" style="width:100%;padding:7px;" /><br/>
+    <button onclick="sendLogin()">发送登录链接</button>
+    <div id="loginInfo" style="color:#333;font-size:13px;margin-top:6px;"></div>
+</div>
+<div id="taskInputBox">
+    <span class="logout" id="logoutBtn" style="display:none" onclick="logout()">退出登录</span>
+    <span class="user-info" id="userInfo" style="display:none"></span>
+    <h3 id="cityTitle">添加任务</h3>
+    <input type="text" id="newTaskInput" placeholder="输入任务内容" style="width:80%">
+    <button onclick="addTask()">添加</button>
+    <ul id="taskList"></ul>
+    <button onclick="closeTaskInput()">关闭</button>
+</div>
+<script>
+const supabaseUrl = 'https://cgfpnxqlyhlvycdnalcc.supabase.co';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNnZnBueHFseWhsdnljZG5hbGNjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDgwOTI3NDcsImV4cCI6MjA2MzY2ODc0N30.zMfvbpUDPTFgXSeHrW8CoymCKwUdbRLUl8T8pU8jeEs';
+const supabase = window.supabase.createClient(supabaseUrl, supabaseKey);
+
+let currentUser = null;
+let currentCity = null;
+let allTasks = {}; // { city: [ {id, content, done, user, finished_at, created_at} ] }
+
+// ---------- 登录/认证流程 ----------
+async function checkLogin() {
+    const { data, error } = await supabase.auth.getUser();
+    if (data && data.user) {
+        currentUser = data.user;
+        document.getElementById('userInfo').style.display = 'inline';
+        document.getElementById('userInfo').textContent = '已登录: ' + (currentUser.email || '');
+        document.getElementById('logoutBtn').style.display = 'inline';
+        document.getElementById('loginBox').style.display = 'none';
+        document.getElementById('overlay').style.display = 'none';
+    } else {
+        document.getElementById('userInfo').style.display = 'none';
+        document.getElementById('logoutBtn').style.display = 'none';
+        document.getElementById('loginBox').style.display = 'block';
+        document.getElementById('overlay').style.display = 'block';
+    }
+}
+
+// 发送登录邮件
+async function sendLogin() {
+    const email = document.getElementById('loginEmail').value.trim();
+    if (!email.match(/^[^@]+@[^@]+\.[^@]+$/)) {
+        document.getElementById('loginInfo').textContent = '请输入正确的邮箱地址';
+        return;
+    }
+    let { error } = await supabase.auth.signInWithOtp({ email });
+    if (!error) {
+        document.getElementById('loginInfo').textContent = '登录链接已发送到邮箱，请在新窗口打开邮件点击登录。点击登录后请刷新页面。';
+    } else {
+        document.getElementById('loginInfo').textContent = '登录失败，请重试或更换邮箱。';
+    }
+}
+
+// 退出登录
+async function logout() {
+    await supabase.auth.signOut();
+    window.location.reload();
+}
+
+// ---------- 任务数据管理 ----------
+async function fetchAllTasks() {
+    // Daddy: 拉取全部任务，一次搞定
+    let { data, error } = await supabase.from('tasks').select('*');
+    allTasks = {};
+    if (data) {
+        data.forEach(task => {
+            if (!allTasks[task.city]) allTasks[task.city] = [];
+            allTasks[task.city].push(task);
+        });
+    }
+}
+async function fetchCityTasks(city) {
+    let { data, error } = await supabase.from('tasks').select('*').eq('city', city).order('id');
+    return data || [];
+}
+async function addTask() {
+    const content = document.getElementById('newTaskInput').value.trim();
+    if (!content || !currentCity) return;
+    const { error } = await supabase.from('tasks').insert([
+        { city: currentCity, content, done: false, user: currentUser ? currentUser.email : null }
+    ]);
+    document.getElementById('newTaskInput').value = '';
+    await refreshCityTasks(currentCity);
+    await fetchAllTasks();
+    renderMap();
+}
+async function toggleTask(id, done, city) {
+    // Daddy: 勾选时写入完成时间
+    let fields = { done };
+    if (done) fields.finished_at = new Date().toISOString();
+    else fields.finished_at = null;
+    await supabase.from('tasks').update(fields).eq('id', id);
+    await refreshCityTasks(city);
+    await fetchAllTasks();
+    renderMap();
+}
+async function delTask(id, city) {
+    await supabase.from('tasks').delete().eq('id', id);
+    await refreshCityTasks(city);
+    await fetchAllTasks();
+    renderMap();
+}
+
+// 刷新当前城市任务
+async function refreshCityTasks(city) {
+    let tasks = await fetchCityTasks(city);
+    renderTaskList(tasks);
+}
+
+// ---------- UI 控制 ----------
+function closeTaskInput() {
+    document.getElementById('taskInputBox').style.display = 'none';
+    document.getElementById('overlay').style.display = 'none';
+}
+function showTaskInput(city) {
+    if (!currentUser) {
+        checkLogin();
+        return;
+    }
+    currentCity = city;
+    document.getElementById('cityTitle').textContent = `添加任务：${city}`;
+    document.getElementById('taskInputBox').style.display = 'block';
+    document.getElementById('overlay').style.display = 'block';
+    refreshCityTasks(city);
+}
+function renderTaskList(tasks) {
+    const ul = document.getElementById('taskList');
+    ul.innerHTML = '';
+    if (!tasks || !tasks.length) {
+        ul.innerHTML = '<li style="color:#999;">暂无任务</li>';
+        return;
+    }
+    tasks.forEach(t => {
+        let li = document.createElement('li');
+        li.innerHTML = `
+            <input type="checkbox" ${t.done ? 'checked' : ''} onclick="toggleTask(${t.id},${!t.done},'${t.city}')">
+            <span style="${t.done?'text-decoration:line-through;color:#bbb;':''}">${t.content}</span>
+            ${t.finished_at ? `<span class="finished-time">完成：${formatTime(t.finished_at)}</span>` : ''}
+            ${t.user ? `<span class="finished-time">${t.user}</span>` : ''}
+            ${currentUser && t.user===currentUser.email ? `<span class="del-btn" onclick="delTask(${t.id},'${t.city}')">删除</span>` : ''}
+        `;
+        ul.appendChild(li);
+    });
+}
+function formatTime(str) {
+    if (!str) return '';
+    const d = new Date(str);
+    return d.getFullYear()+'-'+(d.getMonth()+1).toString().padStart(2,'0')+'-'+d.getDate().toString().padStart(2,'0')
+        +' '+d.getHours().toString().padStart(2,'0')+':'+d.getMinutes().toString().padStart(2,'0');
+}
+
+// ---------- 地图 ----------
+let myChart = echarts.init(document.getElementById('main'));
+async function renderMap() {
+    let data = [];
+    for (const city in allTasks) {
+        const total = allTasks[city].length;
+        const done = allTasks[city].filter(t => t.done).length;
+        data.push({ name: city, value: done+'/'+total });
+    }
+    myChart.setOption({
+        title: { text: '中国城市To-Do同步地图', left: 'center' },
+        tooltip: {
+            trigger: 'item',
+            formatter: function (params) {
+                const city = params.name;
+                const tasks = allTasks[city] || [];
+                if (!tasks.length) return `${city}<br/>暂无任务`;
+                return `${city}<br/>`
+                    + tasks.map(t => (t.done?'✅ ':'☐ ')
+                    + t.content
+                    + (t.finished_at ? `<br/>&nbsp;&nbsp;<span style='color:#888'>完成: ${formatTime(t.finished_at)}</span>` : '')
+                    + (t.user ? ` <span style='color:#888'>@${t.user}</span>` : '')
+                    ).join('<br/>');
+            }
+        },
+        series: [{
+            type: 'map',
+            map: 'china',
+            roam: true,
+            emphasis: { label: { show: true } },
+            data: data
+        }]
+    });
+}
+myChart.on('click', function(params){
+    showTaskInput(params.name);
+});
+
+// ---------- 页面加载 ----------
+window.onload = async function() {
+    await checkLogin();
+    await fetchAllTasks();
+    renderMap();
+};
+
+</script>
+</body>
+</html>
